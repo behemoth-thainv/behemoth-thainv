@@ -1,0 +1,39 @@
+{
+  "login": "behemoth-thainv",
+  "handle": "THAINV",
+  "class": "FULL-STACK ENGINEER",
+  "rank": "TEAM LEAD",
+  "guild": "BEHEMOTH",
+  "guild_since": 2020,
+  "base": "HANOI, VIETNAM",
+  "career_start": 2018,
+  "stages": [
+    {"period": "2018-2019", "name": "VTGO", "role": "DEVELOPER"},
+    {"period": "2019", "name": "VINATEK", "role": "DEVELOPER"},
+    {"period": "2020-NOW", "name": "BEHEMOTH", "role": "LEAD & DEV"}
+  ],
+  "quests": ["LINE COMMERCE", "IOT", "E-COMMERCE", "GAMES", "AI"],
+  "inventory": [
+    {"label": "FRONTEND", "items": [["react", "REACT"], ["vue", "VUE"], ["next", "NEXT"], ["nuxt", "NUXT"], ["ts", "TS"], ["angular", "ANGULAR"], ["flutter", "FLUTTER"]]},
+    {"label": "BACKEND", "items": [["go", "GO"], ["ruby", "RAILS"], ["node", "NODE"], ["python", "PYTHON"], ["spring", "SPRING"]]},
+    {"label": "CLOUD+DB", "items": [["postgres", "PSQL"], ["redis", "REDIS"], ["gcp", "GCP"], ["aws", "AWS"], ["docker", "DOCKER"], ["k8s", "K8S"], ["linux", "LINUX"]]}
+  ],
+  "repos": 96,
+  "languages": {
+    "TypeScript": 44,
+    "Python": 22,
+    "Vue": 19,
+    "Go": 19,
+    "Ruby": 14,
+    "JavaScript": 9
+  },
+  "contributions": {
+    "2020": 1682,
+    "2021": 1183,
+    "2022": 3239,
+    "2023": 3945,
+    "2024": 1813,
+    "2025": 1779,
+    "2026": 3171
+  }
+}
