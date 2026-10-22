@@ -1,20 +1,4 @@
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/hero.svg" width="100%" alt="THAINV: full-stack engineer and team lead from Hanoi, shown as a retro arcade title screen" />
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/player.svg" width="100%" alt="Player card: class, guild, contributions and repos per language" />
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/stages.svg" width="100%" alt="Career stages: VTGO, Vinatek, Behemoth" />
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/inventory.svg" width="100%" alt="Tech stack: React, Vue, Next, Nuxt, TypeScript, Angular, Flutter, Go, Rails, Node, Python, Spring, PostgreSQL, Redis, GCP, AWS, Docker, Kubernetes, Linux" />
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/highscores.svg" width="100%" alt="High scores: contributions per year" />
-
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/snake-dark.svg" />
-  <img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/snake-light.svg" width="100%" alt="A snake eating the contribution graph" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/bento-dark.svg" />
+  <img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/bento-light.svg" width="100%" alt="Nguyễn Viết Thái: full-stack engineer and team lead at Behemoth, based in Hanoi. Stack: React, Vue, Next.js, Nuxt, TypeScript, Angular, Flutter, Go, Rails, Node.js, Python, Spring, PostgreSQL, MySQL, Redis, GCP, AWS, Docker, Kubernetes. Experience: Behemoth (2020 to now), Vinatek (2019), VTGO (2018 to 2019)." />
 </picture>
-
-<img src="https://raw.githubusercontent.com/behemoth-thainv/behemoth-thainv/output/footer.svg" width="100%" alt="Thanks for visiting! Continue? Insert coin." />
-
-</div>
