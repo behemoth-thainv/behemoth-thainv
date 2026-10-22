@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the retro profile cards (SVG) into dist/.
+"""Render the bento profile card into dist/bento-light.svg and dist/bento-dark.svg.
 
 python3 scripts/build.py                 render from scripts/data.json
 python3 scripts/build.py --fetch-scores  refresh yearly contribution totals via gh first (CI does this daily)
@@ -9,682 +9,357 @@ python3 scripts/build.py --fetch-repos   refresh repo/language counts too; run l
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
+import math
 import subprocess
 from html import escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "scripts" / "data.json"
-ICONS = ROOT / "scripts" / "icons.json"
+ICONS = ROOT / "assets" / "icons"
+FONTS = ROOT / "assets" / "fonts"
 DIST = ROOT / "dist"
 
-W = 880
-ADV = 6  # glyph advance in font pixels (5px glyph + 1px gap)
+W, H, GAP, RADIUS = 880, 676, 12, 22
+COL = (W - 3 * GAP) / 4
+ROWS = [(0, 220), (232, 236), (480, 196)]
+SANS = "'Be Vietnam Pro', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
 
-BG = "#0b0b16"
-PANEL = "#15152a"
-LINE = "#2c2c4a"
-WHITE = "#f4f4ff"
-DIM = "#7d84a8"
-GREEN = "#3dff8f"
-YELLOW = "#ffe14d"
-AMBER = "#ffb000"
-PINK = "#ff3e9a"
-CYAN = "#2de2e6"
-RED = "#ff4d4d"
-RAINBOW = [RED, AMBER, YELLOW, GREEN, CYAN, "#6c8cff", "#c86bff"]
+THEMES = {
+    "light": {
+        "card": "#ffffff",
+        "tile": "#f4f6fa",
+        "border": "#e5e8ef",
+        "fg": "#0f172a",
+        "muted": "#64748b",
+        "accent": ("#7c3aed", "#0891b2"),
+        "live": "#10b981",
+        "hero": "#f6f4ff",
+        "blobs": (("#c4b5fd", 0.9), ("#99f6e4", 0.8), ("#fbcfe8", 0.9)),
+        "chip": 0.7,
+        "grain": 0.05,
+    },
+    "dark": {
+        "card": "#0e121b",
+        "tile": "#161b26",
+        "border": "#232a38",
+        "fg": "#eef1f7",
+        "muted": "#8a93a6",
+        "accent": ("#a78bfa", "#22d3ee"),
+        "live": "#34d399",
+        "hero": "#0b0f1c",
+        "blobs": (("#7c3aed", 0.75), ("#0891b2", 0.65), ("#db2777", 0.5)),
+        "chip": 0.08,
+        "grain": 0.1,
+    },
+}
+# Logos whose brand colours disappear on a dark background.
+DARK_RECOLOR = {
+    "amazonwebservices-original-wordmark": {"#252f3e": "#e6edf3"},
+    "mysql-original": {"#00618A": "#5fa8d3"},
+}
 LANG_COLORS = {
-    "TypeScript": "#3d8eff",
+    "TypeScript": "#3178c6",
     "Python": "#ffd43b",
-    "Vue": "#41d18f",
-    "Go": "#2de2e6",
-    "Ruby": "#ff4d4d",
-    "JavaScript": "#f7e45a",
-    "Dart": "#22c7bd",
-    "Swift": "#ff7a45",
+    "Vue": "#41b883",
+    "Go": "#00add8",
+    "Ruby": "#cc342d",
+    "JavaScript": "#a371f7",
+    "Dart": "#00b4ab",
+    "Swift": "#f05138",
 }
 NON_SKILL_LANGUAGES = {"HTML", "CSS", "SCSS", "Dockerfile", "Makefile", "Shell", "Go Template", "Mustache", "Bicep", "Jupyter Notebook"}
 
-# 5x7 bitmap font, one string per row.
-FONT = {
-    "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
-    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
-    "D": ["###..", "#..#.", "#...#", "#...#", "#...#", "#..#.", "###.."],
-    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
-    "F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
-    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"],
-    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
-    "J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
-    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
-    "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
-    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
-    "N": ["#...#", "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"],
-    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
-    "Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
-    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
-    "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
-    "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
-    "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
-    "W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#."],
-    "X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
-    "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
-    "Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
-    "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
-    "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
-    "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
-    "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
-    "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
-    "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
-    "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
-    "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
-    "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
-    "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
-    ".": [".....", ".....", ".....", ".....", ".....", ".##..", ".##.."],
-    ",": [".....", ".....", ".....", ".....", ".##..", "..#..", ".#..."],
-    ":": [".....", ".##..", ".##..", ".....", ".##..", ".##..", "....."],
-    "-": [".....", ".....", ".....", "#####", ".....", ".....", "....."],
-    "_": [".....", ".....", ".....", ".....", ".....", ".....", "#####"],
-    "/": [".....", "....#", "...#.", "..#..", ".#...", "#....", "....."],
-    "(": ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."],
-    ")": [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."],
-    "!": ["..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."],
-    "?": [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."],
-    "&": [".##..", "#..#.", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#"],
-    "'": ["..#..", "..#..", ".#...", ".....", ".....", ".....", "....."],
-    "+": [".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."],
-    "@": [".###.", "#...#", "....#", ".##.#", "#.#.#", "#.#.#", ".###."],
-    "#": [".#.#.", ".#.#.", "#####", ".#.#.", "#####", ".#.#.", ".#.#."],
-    "·": [".....", ".....", ".....", "..#..", ".....", ".....", "....."],
-    "▶": ["#....", "##...", "###..", "####.", "###..", "##...", "#...."],
-    "◀": ["....#", "...##", "..###", ".####", "..###", "...##", "....#"],
-    "♥": [".....", ".#.#.", "#####", "#####", ".###.", "..#..", "....."],
-    "★": ["..#..", "..#..", "#####", ".###.", ".###.", ".#.#.", "#...#"],
-}
 
-# 16x16 mascot: a small horned behemoth. Left half only; the right half is mirrored.
-MASCOT_LEFT = [
-    ".K......",
-    "KHK.....",
-    "KHHK.KKK",
-    ".KHKKLLL",
-    "..KLLPPP",
-    ".KLPPPPP",
-    ".KPWWWPP",
-    "KPPWEEPP",
-    "KPPWEEPP",
-    "KPRPPPPP",
-    "KPPPKWKK",
-    ".KPPPPPP",
-    ".KDPPPPP",
-    "..KDDDDD",
-    "..KDDKKK",
-    "..KKKK..",
-]
-MASCOT = [row + row[::-1] for row in MASCOT_LEFT]
-MASCOT_COLORS = {
-    "K": "#1a0f2e",
-    "H": "#f5e6c8",
-    "L": "#c4a6ff",
-    "P": "#8b5cf6",
-    "D": "#5b2fb8",
-    "W": "#ffffff",
-    "E": "#1a0f2e",
-    "R": "#ff7aa8",
-}
-# Closed eyes, drawn over the open ones while blinking.
-MASCOT_BLINK = (
-    ["." * 16] * 6
-    + [
-        "...PPP....PPP...",
-        "...PPP....PPP...",
-        "...KKK....KKK...",
-    ]
-    + ["." * 16] * 7
-)
-
-INVADERS = {
-    "squid": (
-        ["...##...", "..####..", ".######.", "##.##.##", "########", "..#..#..", ".#.##.#.", "#.#..#.#"],
-        ["...##...", "..####..", ".######.", "##.##.##", "########", ".#.##.#.", "#......#", ".#....#."],
-    ),
-    "crab": (
-        ["..#.....#..", "...#...#...", "..#######..", ".##.###.##.", "###########", "#.#######.#", "#.#.....#.#", "...##.##..."],
-        ["..#.....#..", "#..#...#..#", "#.#######.#", "###.###.###", "###########", ".#########.", "..#.....#..", ".#.......#."],
-    ),
-    "octopus": (
-        ["....####....", ".##########.", "############", "###..##..###", "############", "...##..##...", "..##.##.##..", "##........##"],
-        ["....####....", ".##########.", "############", "###..##..###", "############", "..###..###..", ".##..##..##.", "..##....##.."],
-    ),
-}
+def col_x(c: int) -> float:
+    return c * (COL + GAP)
 
 
-def runs(rows: list[str], key: str = "#") -> str:
-    d = []
-    for y, row in enumerate(rows):
-        x = 0
-        while x < len(row):
-            if row[x] != key:
-                x += 1
-                continue
-            n = 1
-            while x + n < len(row) and row[x + n] == key:
-                n += 1
-            d.append(f"M{x} {y}h{n}v1h-{n}z")
-            x += n
-    return "".join(d)
+def span(n: int) -> float:
+    return n * COL + (n - 1) * GAP
 
 
-def sprite(rows: list[str], colors: dict[str, str]) -> str:
-    return "".join(
-        f'<path fill="{color}" shape-rendering="crispEdges" d="{d}"/>' for key, color in colors.items() if (d := runs(rows, key))
-    )
-
-
-def text_width(s: str, scale: int) -> int:
-    return (len(s) * ADV - 1) * scale
-
-
-def align(x: float, width: int, anchor: str) -> int:
-    if anchor == "middle":
-        return round(x - width / 2)
-    if anchor == "end":
-        return round(x - width)
-    return round(x)
-
-
-def discrete(attr: str, values: list, times: list[float], dur: float, repeat: bool = False) -> str:
-    tail = 'repeatCount="indefinite"' if repeat else 'fill="freeze"'
+def text(
+    x: float, y: float, s: str, size: int, fill: str, weight: int = 400, anchor: str = "start", mono: bool = False, extra: str = ""
+) -> str:
+    cls = "m" if mono else "s"
     return (
-        f'<animate attributeName="{attr}" values="{";".join(map(str, values))}" '
-        f'keyTimes="{";".join(f"{t:.4f}" for t in times)}" dur="{dur:.3f}s" calcMode="discrete" {tail}/>'
+        f'<text class="{cls}" x="{x:g}" y="{y:g}" font-size="{size}" font-weight="{weight}" fill="{fill}" '
+        f'text-anchor="{anchor}"{extra}>{escape(s)}</text>'
     )
 
 
-def blink(period: float = 1.0) -> str:
-    return discrete("opacity", [1, 0], [0, 0.5], period, repeat=True)
+def card(x: float, y: float, w: float, h: float, t: dict) -> str:
+    return f'<rect x="{x + 0.5:g}" y="{y + 0.5:g}" width="{w - 1:g}" height="{h - 1:g}" rx="{RADIUS}" fill="{t["card"]}" stroke="{t["border"]}"/>'
 
 
-def hidden_until(t: float) -> str:
-    """Hide the parent for the first t seconds after load; static renders still show it."""
-    return f'<set attributeName="opacity" to="0" begin="0s" dur="{t:.2f}s"/>'
+def label(x: float, y: float, s: str, t: dict) -> str:
+    return text(x + 22, y + 34, s.upper(), 11, t["muted"], 500, mono=True)
 
 
-def ok_line(label: str, width: int = 38) -> str:
-    return f"{label} {'.' * (width - len(label) - 4)} OK"
-
-
-class Svg:
-    def __init__(self, width: int, height: int, title: str):
-        self.w, self.h, self.title = width, height, title
-        self.chars: set[str] = set()
-        self.defs: list[str] = []
-        self.body: list[str] = []
-        self._n = 0
-
-    def uid(self, prefix: str) -> str:
-        self._n += 1
-        return f"{prefix}{self._n}"
-
-    def add(self, *parts: str) -> None:
-        self.body.extend(parts)
-
-    def text(self, s: str, x: float, y: float, scale: int = 2, fill: str = WHITE, anchor: str = "start", inner: str = "") -> str:
-        s = s.upper()
-        missing = set(s) - FONT.keys() - {" "}
-        if missing:
-            raise ValueError(f"no glyph for {sorted(missing)} in {s!r}")
-        self.chars.update(s)
-        x = align(x, text_width(s, scale), anchor)
-        uses = "".join(f'<use href="#g{ord(c):x}" x="{i * ADV}"/>' for i, c in enumerate(s) if c != " ")
-        return f'<g transform="translate({x} {y}) scale({scale})" fill="{fill}">{uses}{inner}</g>'
-
-    def reveal(self, content: str, x: int, y: int, w: int, h: int, start: float, steps: int, step: float, vertical: bool = False) -> str:
-        """Clip content and grow the clip in discrete steps (typing / filling effect)."""
-        cid = self.uid("rv")
-        dur = start + steps * step
-        sizes = [0] + [round((w if not vertical else h) * i / steps) for i in range(1, steps + 1)]
-        times = [0] + [(start + (i - 1) * step) / dur for i in range(1, steps + 1)]
-        if vertical:
-            anim = discrete("height", sizes, times, dur) + discrete("y", [y + h - v for v in sizes], times, dur)
-        else:
-            anim = discrete("width", sizes, times, dur)
-        self.defs.append(f'<clipPath id="{cid}"><rect x="{x}" y="{y}" width="{w}" height="{h}">{anim}</rect></clipPath>')
-        return f'<g clip-path="url(#{cid})">{content}</g>'
-
-    def typed(self, s: str, x: float, y: float, scale: int, fill: str, start: float, step: float = 0.02, anchor: str = "start") -> str:
-        width = text_width(s, scale)
-        x = align(x, width, anchor)
-        glyphs = self.text(s, x, y, scale, fill)
-        return self.reveal(glyphs, x, y - scale, len(s) * ADV * scale, 9 * scale, start, len(s), step)
-
-    def scanlines(self, x: int, y: int, w: int, h: int, opacity: float = 0.22) -> str:
-        pid = self.uid("scan")
-        self.defs.append(
-            f'<pattern id="{pid}" width="4" height="4" patternUnits="userSpaceOnUse">'
-            f'<rect y="2" width="4" height="2" fill="#000" fill-opacity="{opacity}"/></pattern>'
-        )
-        return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})" pointer-events="none"/>'
-
-    def render(self) -> str:
-        glyphs = "".join(
-            f'<path id="g{ord(c):x}" shape-rendering="crispEdges" d="{runs(FONT[c])}"/>' for c in sorted(self.chars) if c != " "
-        )
-        title = escape(self.title)
-        return (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.w}" height="{self.h}" viewBox="0 0 {self.w} {self.h}" '
-            f'role="img" aria-label="{title}"><title>{title}</title>'
-            f"<defs>{glyphs}{''.join(self.defs)}</defs>{''.join(self.body)}</svg>\n"
-        )
-
-
-def pixel_box(x: int, y: int, w: int, h: int, border: str = WHITE, fill: str = BG, b: int = 4) -> str:
-    """NES-style dialog box: solid border with notched pixel corners."""
-    rects = [
-        (x + b, y + b, w - 2 * b, h - 2 * b, fill),
-        (x + 2 * b, y, w - 4 * b, b, border),
-        (x + 2 * b, y + h - b, w - 4 * b, b, border),
-        (x, y + 2 * b, b, h - 4 * b, border),
-        (x + w - b, y + 2 * b, b, h - 4 * b, border),
-        (x + b, y + b, b, b, border),
-        (x + w - 2 * b, y + b, b, b, border),
-        (x + b, y + h - 2 * b, b, b, border),
-        (x + w - 2 * b, y + h - 2 * b, b, b, border),
-    ]
-    return "".join(
-        f'<rect x="{rx}" y="{ry}" width="{rw}" height="{rh}" fill="{c}" shape-rendering="crispEdges"/>' for rx, ry, rw, rh, c in rects
-    )
-
-
-def card(svg: Svg, title: str | None, top: int = 14) -> tuple[int, int]:
-    """Draw the card frame (and its title tab); return the inner content origin."""
-    svg.add(pixel_box(2, top, svg.w - 4, svg.h - top - 2))
-    if title:
-        tw = text_width(title, 2)
-        svg.add(pixel_box(24, top - 12, tw + 32, 30), svg.text(title, 40, top - 4, 2, YELLOW))
-    return 2, top
-
-
-def finish_card(svg: Svg, top: int = 14) -> None:
-    svg.add(svg.scanlines(6, top + 4, svg.w - 12, svg.h - top - 10, 0.18))
-
-
-def mascot(svg: Svg, x: int, y: int, scale: int, bob: int = 1) -> str:
-    blink_layer = (
-        f'<g opacity="0">{sprite(MASCOT_BLINK, MASCOT_COLORS)}{discrete("opacity", [0, 1, 0], [0, 0.9, 0.95], 4.2, repeat=True)}</g>'
-    )
-    bob_anim = (
-        f'<animateTransform attributeName="transform" type="translate" values="0 0;0 {-bob * scale}" '
-        f'dur="0.9s" calcMode="discrete" repeatCount="indefinite"/>'
-    )
+def pulse(cx: float, cy: float, color: str, r: float = 4) -> str:
     return (
-        f'<g transform="translate({x} {y})"><g>{bob_anim}'
-        f'<g transform="scale({scale})">{sprite(MASCOT, MASCOT_COLORS)}{blink_layer}</g></g></g>'
+        f'<circle cx="{cx:g}" cy="{cy:g}" r="{r}" fill="{color}" fill-opacity="0.5">'
+        f'<animate attributeName="r" values="{r};{r * 4}" dur="2.4s" repeatCount="indefinite"/>'
+        f'<animate attributeName="fill-opacity" values="0.5;0" dur="2.4s" repeatCount="indefinite"/></circle>'
+        f'<circle cx="{cx:g}" cy="{cy:g}" r="{r}" fill="{color}"/>'
     )
 
 
-def invader(kind: str, x: int, y: int, scale: int, color: str) -> str:
-    a, b = INVADERS[kind]
-    frame_a = f"<g>{sprite(a, {'#': color})}{discrete('opacity', [1, 0], [0, 0.5], 0.8, repeat=True)}</g>"
-    frame_b = f'<g opacity="0">{sprite(b, {"#": color})}{discrete("opacity", [0, 1], [0, 0.5], 0.8, repeat=True)}</g>'
-    return f'<g transform="translate({x} {y}) scale({scale})">{frame_a}{frame_b}</g>'
-
-
-# ---------------------------------------------------------------- cards
-
-
-def build_hero(data: dict, scores: dict[int, int]) -> str:
-    year = dt.date.today().year
-    H = 470
-    sx, sy, sw, sh = 36, 30, 808, 380
-    boot_end = 3.4
-    svg = Svg(W, H, f"{data['handle']}: {data['class'].lower()} and {data['rank'].lower()}, retro arcade title screen")
-
-    svg.defs.append(
-        '<linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3b47"/>'
-        '<stop offset="1" stop-color="#17171d"/></linearGradient>'
-        '<radialGradient id="screen" cx="50%" cy="45%" r="70%"><stop offset="0" stop-color="#151d38"/>'
-        '<stop offset="1" stop-color="#04050b"/></radialGradient>'
-        '<radialGradient id="vignette" cx="50%" cy="50%" r="72%"><stop offset="0.62" stop-color="#000" stop-opacity="0"/>'
-        '<stop offset="1" stop-color="#000" stop-opacity="0.75"/></radialGradient>'
-        '<linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.09"/>'
-        '<stop offset="0.35" stop-color="#fff" stop-opacity="0"/></linearGradient>'
-        '<linearGradient id="roll" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/>'
-        '<stop offset="0.5" stop-color="#fff" stop-opacity="0.05"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>'
-        '<linearGradient id="logo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="7"><stop offset="0" stop-color="#fff7b0"/>'
-        '<stop offset="0.45" stop-color="#ffe14d"/><stop offset="0.55" stop-color="#ffb000"/><stop offset="1" stop-color="#ff6a00"/></linearGradient>'
-        '<pattern id="pixgrid" width="1" height="1" patternUnits="userSpaceOnUse"><rect x="0.86" width="0.14" height="1" fill="#000" fill-opacity="0.35"/>'
-        '<rect y="0.86" width="1" height="0.14" fill="#000" fill-opacity="0.35"/></pattern>'
-        '<filter id="glow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.4" result="b"/>'
-        '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'
-        f'<clipPath id="screenClip"><rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" rx="26"/></clipPath>'
-    )
-
-    svg.add(
-        f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="30" fill="url(#bezel)" stroke="#000" stroke-width="2"/>',
-        f'<rect x="{sx - 10}" y="{sy - 10}" width="{sw + 20}" height="{sh + 20}" rx="34" fill="#08080c"/>',
-        f'<rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" rx="26" fill="url(#screen)"/>',
-    )
-
-    # Boot sequence: only visible during the first seconds after load.
-    boot_lines = [
-        (f"BEHEMOTH BIOS V2.0   (C) {data['career_start']}-{year}", WHITE),
-        ("CPU   CAFFEINE-POWERED CORE @ 4.2GHZ", GREEN),
-        (ok_line("MEM   640K"), GREEN),
-        (ok_line(f"LOAD  {data['base'].split(',')[0]}.SYS"), GREEN),
-        (ok_line("LOAD  PLAYER_1.DAT"), GREEN),
-        ("", GREEN),
-        ("INSERTING COIN ...", YELLOW),
-    ]
-    boot = []
-    t = 0.15
-    for i, (line, color) in enumerate(boot_lines):
-        if line:
-            boot.append(svg.typed(line, sx + 40, sy + 34 + i * 30, 2, color, t, 0.012))
-            t += len(line) * 0.012 + 0.12
-    boot_cursor = (
-        f'<rect x="{sx + 40 + text_width("INSERTING COIN ...", 2) + 8}" y="{sy + 34 + 6 * 30}" width="12" height="14" fill="{YELLOW}">'
-        f"{blink(0.4)}</rect>"
-    )
-    svg.add(
-        f'<g clip-path="url(#screenClip)">'
-        f'<g opacity="0" filter="url(#glow)">{"".join(boot)}{boot_cursor}'
-        f'<set attributeName="opacity" to="1" begin="0s" dur="{boot_end}s"/></g>'
-    )
-
-    # Title screen (the final, static state).
-    best = max(scores.values())
-    total = sum(scores.values())
-    level = year - data["career_start"]
-    title_scale = 10
-    title_w = text_width(data["handle"], title_scale)
-    tx, ty = round(W / 2 - title_w / 2) - 4, sy + 104
-
-    def logo_layer(dx: int, dy: int, fill: str, extra: str = "") -> str:
-        return svg.text(data["handle"], tx + dx, ty + dy, title_scale, fill, inner=extra)
-
-    logo = logo_layer(8, 8, "#3a1060") + logo_layer(4, 4, PINK) + logo_layer(0, 0, "url(#logo)") + logo_layer(0, 0, "url(#pixgrid)")
-    logo_drop = (
-        f'<animateTransform attributeName="transform" type="translate" values="0 -320;0 -320;0 -160;0 -40;0 0" '
-        f'keyTimes="0;{boot_end / (boot_end + 0.5):.4f};{(boot_end + 0.15) / (boot_end + 0.5):.4f};'
-        f'{(boot_end + 0.3) / (boot_end + 0.5):.4f};1" dur="{boot_end + 0.5}s" calcMode="discrete" fill="freeze"/>'
-    )
-
-    hud = [
-        svg.text("1UP", sx + 44, sy + 24, 2, PINK, inner=blink(0.9)),
-        svg.text(f"{total:06d}", sx + 44, sy + 46, 2, WHITE),
-        svg.text("HIGH SCORE", W / 2, sy + 24, 2, RED, "middle"),
-        svg.text(f"{best:06d}", W / 2, sy + 46, 2, WHITE, "middle"),
-        svg.text("LEVEL", sx + sw - 44, sy + 24, 2, CYAN, "end"),
-        svg.text(f"{level:02d}", sx + sw - 44, sy + 46, 2, WHITE, "end"),
-    ]
-
-    march = ";".join(f"{v} 0" for v in [0, 12, 24, 36, 24, 12, 0, -12, -24, -36, -24, -12])
-    row = [("squid", PINK), ("crab", CYAN), ("octopus", GREEN), ("crab", CYAN), ("squid", PINK)]
-    invaders = "".join(
-        invader(kind, round(W / 2 + (i - 2) * 76 - len(INVADERS[kind][0][0]) * 1.5), sy + 262, 3, color)
-        for i, (kind, color) in enumerate(row)
-    )
-    invaders = (
-        f'<g>{invaders}<animateTransform attributeName="transform" type="translate" values="{march}" '
-        f'dur="4.8s" calcMode="discrete" repeatCount="indefinite"/></g>'
-    )
-
-    tagline = f"{data['base']} · CODING SINCE {data['career_start']}"
-    title_screen = (
-        "".join(hud)
-        + svg.text(f"{data['guild']} PRESENTS", W / 2, sy + 80, 2, DIM, "middle")
-        + f"<g>{logo}{logo_drop}</g>"
-        + svg.typed(f"{data['class']} & {data['rank']}", W / 2, sy + 200, 3, CYAN, boot_end + 0.6, 0.03, "middle")
-        + f"<g>{svg.text(tagline, W / 2, sy + 236, 2, WHITE, 'middle')}{hidden_until(boot_end + 1.6)}</g>"
-        + invaders
-        + svg.text("▶ PRESS START", W / 2, sy + 312, 3, YELLOW, "middle", inner=blink(1.1))
-        + svg.text(f"(C) {year} {data['handle']} · ALL BUGS RESERVED", W / 2, sy + 352, 2, DIM, "middle")
-    )
-    svg.add(
-        f'<g filter="url(#glow)">{title_screen}{hidden_until(boot_end)}</g>',
-        f'<rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" fill="#fff" opacity="0">'
-        f'<animate attributeName="opacity" values="0;0.55;0" begin="{boot_end}s" dur="0.25s"/></rect>',
-        svg.scanlines(sx, sy, sw, sh),
-        f'<rect x="{sx}" y="{sy - 90}" width="{sw}" height="90" fill="url(#roll)">'
-        f'<animateTransform attributeName="transform" type="translate" values="0 0;0 {sh + 90}" dur="7s" repeatCount="indefinite"/></rect>',
-        f'<rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" fill="url(#vignette)"/>',
-        f'<rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" fill="url(#glass)"/>',
-        "</g>",
-    )
-
-    chin = sy + sh + 30
-    svg.add(
-        svg.text(f"{data['guild']}-TRON 2000", sx + 6, chin - 7, 2, "#9a9aae"),
-        "".join(f'<rect x="{W / 2 - 50 + i * 14}" y="{chin - 9}" width="8" height="18" rx="2" fill="#101015"/>' for i in range(8)),
-        svg.text("PWR", W - 112, chin - 4, 1, "#9a9aae"),
-        f'<circle cx="{W - 78}" cy="{chin}" r="5" fill="{GREEN}" filter="url(#glow)"/>',
-    )
-    return svg.render()
-
-
-def build_player(data: dict, scores: dict[int, int]) -> str:
-    year = dt.date.today().year
-    H = 404
-    svg = Svg(W, H, f"Player card: {data['handle']}, {data['class'].lower()}")
-    _, top = card(svg, "PLAYER 1")
-
-    bx, by = 36, top + 34
-    svg.add(
-        pixel_box(bx, by, 192, 192, LINE, PANEL, 2),
-        f'<rect x="{bx + 20}" y="{by + 172}" width="152" height="4" fill="{LINE}"/>',
-        mascot(svg, bx + 16, by + 12, 10),
-        svg.text(data["handle"], bx + 96, by + 212, 3, WHITE, "middle"),
-        svg.text(f"LV {year - data['career_start']:02d}", bx + 96, by + 246, 2, YELLOW, "middle"),
-        svg.text("♥♥♥♥♥", bx + 96, by + 272, 2, RED, "middle"),
-        svg.text("HP", bx + 30, by + 272, 2, DIM),
-    )
-
-    x0 = 268
-    total = sum(scores.values())
-    info = [
-        ("CLASS", data["class"]),
-        ("RANK", data["rank"]),
-        ("GUILD", f"{data['guild']} · {data['guild_since']}-NOW"),
-        ("BASE", data["base"]),
-        ("XP", f"{total:,} CONTRIBUTIONS"),
-        ("QUESTS", f"{data['repos']} REPOS"),
-    ]
-    for i, (label, value) in enumerate(info):
-        y = top + 34 + i * 26
-        svg.add(svg.text(label, x0, y, 2, CYAN), svg.text(value, x0 + 96, y, 2, WHITE))
-
-    div_y = top + 196
-    svg.add(
-        "".join(f'<rect x="{x}" y="{div_y}" width="8" height="2" fill="{LINE}"/>' for x in range(x0, W - 36, 14)),
-        svg.text("SKILL XP · REPOS PER LANGUAGE", x0, div_y + 16, 2, DIM),
-    )
-
-    langs = sorted(((k, v) for k, v in data["languages"].items() if k not in NON_SKILL_LANGUAGES), key=lambda kv: -kv[1])[:6]
-    top_count = langs[0][1]
-    seg_w, seg_gap, max_segs = 10, 2, 32
-    bar_x = x0 + 132
-    for i, (lang, count) in enumerate(langs):
-        y = div_y + 44 + i * 22
-        filled = max(1, round(count / top_count * max_segs))
-        color = LANG_COLORS.get(lang, WHITE)
-        empty = "".join(
-            f'<rect x="{bar_x + s * (seg_w + seg_gap)}" y="{y}" width="{seg_w}" height="14" fill="{LINE}"/>' for s in range(max_segs)
+def font_css() -> str:
+    rules = []
+    for font in json.loads((FONTS / "fonts.json").read_text()):
+        data = base64.b64encode((FONTS / font["file"]).read_bytes()).decode()
+        rules.append(
+            f"@font-face{{font-family:'{font['family']}';font-weight:{font['weight']};"
+            f"src:url(data:font/woff2;base64,{data}) format('woff2');unicode-range:{font['unicode_range']}}}"
         )
-        full = "".join(
-            f'<rect x="{bar_x + s * (seg_w + seg_gap)}" y="{y}" width="{seg_w}" height="14" fill="{color}"/>' for s in range(filled)
-        )
-        svg.add(
-            svg.text(lang, x0, y, 2, WHITE),
-            empty,
-            svg.reveal(full, bar_x, y, filled * (seg_w + seg_gap), 14, 0.4 + i * 0.15, filled, 0.03),
-            svg.text(str(count), bar_x + max_segs * (seg_w + seg_gap) + 10, y, 2, color),
-        )
-    finish_card(svg)
-    return svg.render()
+    return "".join(rules) + f".s{{font-family:{SANS}}}.m{{font-family:{MONO};letter-spacing:.08em}}"
 
 
-def build_stages(data: dict) -> str:
-    H = 350
-    svg = Svg(W, H, "Career stage select: " + ", ".join(f"{s['name']} {s['period']}" for s in data["stages"]))
-    _, top = card(svg, "STAGE SELECT")
-    stages = data["stages"]
-    n = len(stages)
-    xs = [round(W * (i + 0.5) / n) for i in range(n)]
-    node_y = top + 86
+def icon_uri(name: str, theme: str) -> str:
+    src = (ICONS / f"{name}.svg").read_text()
+    if theme == "dark":
+        for old, new in DARK_RECOLOR.get(name, {}).items():
+            src = src.replace(old, new)
+    return "data:image/svg+xml;base64," + base64.b64encode(src.encode()).decode()
 
-    for i in range(n - 1):
-        x_from, x_to = xs[i] + 34, xs[i + 1] - 34
-        color = AMBER if i < n - 2 else PINK
-        svg.add("".join(f'<rect x="{x}" y="{node_y + 22}" width="8" height="4" fill="{color}"/>' for x in range(x_from, x_to - 4, 16)))
 
-    for i, (x, stage) in enumerate(zip(xs, stages)):
-        current = i == n - 1
-        border = PINK if current else GREEN
-        svg.add(pixel_box(x - 26, node_y, 52, 48, border, PANEL), svg.text(str(i + 1), x, node_y + 14, 3, WHITE, "middle"))
-        if current:
-            svg.add(mascot(svg, x - 24, node_y - 52, 3, bob=2))
-            status = svg.text("NOW PLAYING", x, node_y + 172, 2, PINK, "middle", inner=blink(1.0))
+def rotating_words(words: list[str], x: float, y: float, hold: float = 2.6, fade: float = 0.35) -> str:
+    """Cycle through words with a cross-fade; static renders show the first word."""
+    period = hold * len(words)
+    parts = []
+    for i, word in enumerate(words):
+        start, end = i * hold, (i + 1) * hold
+        if i == 0:
+            values, times = [1, 1, 0, 0, 1], [0, end - fade, end, period - fade, period]
+        elif i == len(words) - 1:
+            values, times = [0, 0, 1, 1, 0], [0, start - fade, start, period - fade, period]
         else:
-            svg.add(svg.text("★", x, node_y - 30, 3, YELLOW, "middle"))
-            status = svg.text("CLEAR!", x, node_y + 172, 2, GREEN, "middle")
-        svg.add(
-            svg.text(f"STAGE {i + 1}", x, node_y + 66, 2, DIM, "middle"),
-            svg.text(stage["period"], x, node_y + 88, 2, YELLOW, "middle"),
-            svg.text(stage["name"], x, node_y + 112, 3, WHITE, "middle"),
-            svg.text(stage["role"], x, node_y + 144, 2, CYAN, "middle"),
-            status,
+            values, times = [0, 0, 1, 1, 0, 0], [0, start - fade, start, end - fade, end, period]
+        anim = (
+            f'<animate attributeName="opacity" values="{";".join(map(str, values))}" '
+            f'keyTimes="{";".join(f"{v / period:.4f}" for v in times)}" dur="{period:g}s" repeatCount="indefinite"/>'
         )
-
-    quests = "SIDE QUESTS: " + " · ".join(data["quests"])
-    svg.add(svg.text(quests, W / 2, H - 42, 2, DIM, "middle"))
-    finish_card(svg)
-    return svg.render()
+        parts.append(f'<g opacity="{1 if i == 0 else 0}">{text(x, y, word, 16, "url(#accent-text)", 600)}{anim}</g>')
+    return "".join(parts)
 
 
-def build_inventory(data: dict, icons: dict) -> str:
-    groups = data["inventory"]
-    slot, pitch, row_h = 64, 96, 112
-    H = 54 + len(groups) * row_h
-    svg = Svg(W, H, "Inventory: " + ", ".join(label for g in groups for _, label in g["items"]))
-    _, top = card(svg, "INVENTORY")
+def hero(data: dict, t: dict) -> str:
+    w, h = span(3), ROWS[0][1]
+    blobs = [
+        ((110, 30, 190), "0 0;70 30;-20 50;0 0", 19),
+        ((430, 210, 210), "0 0;-80 -30;40 -50;0 0", 23),
+        ((620, 20, 160), "0 0;-50 60;-90 10;0 0", 27),
+    ]
+    gradients = "".join(
+        f'<radialGradient id="blob{i}"><stop offset="0" stop-color="{color}" stop-opacity="{alpha}"/>'
+        f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></radialGradient>'
+        for i, (color, alpha) in enumerate(t["blobs"])
+    )
+    circles = "".join(
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="url(#blob{i})">'
+        f'<animateTransform attributeName="transform" type="translate" values="{path}" dur="{dur}s" repeatCount="indefinite"/></circle>'
+        for i, ((cx, cy, r), path, dur) in enumerate(blobs)
+    )
+    chip_w = max(len(word) for word in data["building"]) * 9.6 + 32
+    return (
+        f'<defs>{gradients}<clipPath id="hero-clip"><rect width="{w:g}" height="{h}" rx="{RADIUS}"/></clipPath></defs>'
+        f'<g clip-path="url(#hero-clip)"><rect width="{w:g}" height="{h}" fill="{t["hero"]}"/>{circles}'
+        f'<rect width="{w:g}" height="{h}" filter="url(#grain)" opacity="{t["grain"]}"/></g>'
+        f'<rect x="0.5" y="0.5" width="{w - 1:g}" height="{h - 1}" rx="{RADIUS}" fill="none" stroke="{t["border"]}"/>'
+        + text(30, 54, "HELLO, I'M", 12, t["fg"], 500, mono=True, extra=' fill-opacity="0.65"')
+        + text(28, 108, data["name"], 44, t["fg"], 800)
+        + text(30, 144, data["headline"], 18, t["fg"], 500, extra=' fill-opacity="0.8"')
+        + text(30, 189, "BUILDING", 12, t["fg"], 500, mono=True, extra=' fill-opacity="0.65"')
+        + f'<rect x="108" y="166" width="{chip_w:g}" height="34" rx="17" fill="#ffffff" fill-opacity="{t["chip"]}" stroke="{t["border"]}"/>'
+        + rotating_words(data["building"], 124, 189)
+    )
 
-    slots = []
-    for r, group in enumerate(groups):
-        y = top + 30 + r * row_h
-        svg.add(svg.text(group["label"], 36, y + 25, 2, CYAN))
-        for c, (icon, label) in enumerate(group["items"]):
-            x = 176 + c * pitch
-            slots.append((x, y))
-            art = icons[icon]
-            colors = {str(k): color for k, color in enumerate(art["palette"])}
-            svg.add(
-                pixel_box(x, y, slot, slot, LINE, PANEL, 2),
-                f'<g transform="translate({x + 8} {y + 8}) scale(3)">{sprite(art["rows"], colors)}</g>',
-                svg.text(label, x + slot / 2, y + slot + 10, 2, WHITE, "middle"),
+
+def location(data: dict, t: dict) -> str:
+    x, (y, h) = col_x(3), ROWS[0]
+    loc = data["location"]
+    return (
+        card(x, y, COL, h, t)
+        + f'<rect x="{x + 1:g}" y="{y + 48}" width="{COL - 2:g}" height="84" fill="url(#dots)" mask="url(#fade-down)"/>'
+        + label(x, y, "Based in", t)
+        + pulse(x + COL - 52, y + 88, t["live"], 5)
+        + text(x + 22, y + 166, loc["city"], 32, t["fg"], 800)
+        + text(x + 22, y + 192, f"{loc['country']} · {loc['tz']}", 13, t["muted"])
+    )
+
+
+def stack(data: dict, theme: str, t: dict) -> str:
+    x, (y, h) = col_x(0), ROWS[1]
+    w = span(2)
+    tile, gap = 46, 12
+    per_row = max(len(row) for row in data["stack"])
+    x0 = x + (w - (per_row * tile + (per_row - 1) * gap)) / 2
+    tiles = []
+    for r, row in enumerate(data["stack"]):
+        for c, (icon, _name) in enumerate(row):
+            tx, ty = x0 + c * (tile + gap), y + 58 + r * (tile + gap)
+            tiles.append(
+                f'<rect x="{tx + 0.5:g}" y="{ty + 0.5:g}" width="{tile - 1}" height="{tile - 1}" rx="12" fill="{t["tile"]}" stroke="{t["border"]}"/>'
+                f'<image href="{icon_uri(icon, theme)}" x="{tx + 10:g}" y="{ty + 10:g}" width="26" height="26"/>'
             )
-
-    # Selection cursor hopping across the slots, like an RPG menu.
-    corner = "M0 0h12v4h-8v8h-4z"
-    brackets = "".join(
-        f'<path d="{corner}" fill="{YELLOW}" transform="translate({dx} {dy}) scale({sx} {sy})"/>'
-        for dx, dy, sx, sy in [(-6, -6, 1, 1), (slot + 6, -6, -1, 1), (-6, slot + 6, 1, -1), (slot + 6, slot + 6, -1, -1)]
+    count = sum(len(row) for row in data["stack"])
+    return (
+        card(x, y, w, h, t)
+        + label(x, y, "Stack", t)
+        + text(x + w - 22, y + 34, f"{count} TOOLS", 11, t["muted"], 500, "end", mono=True)
+        + "".join(tiles)
     )
-    path = ";".join(f"{x} {y}" for x, y in slots)
-    svg.add(
-        f'<g transform="translate({slots[0][0]} {slots[0][1]})">{brackets}'
-        f'<animateTransform attributeName="transform" type="translate" values="{path}" dur="{len(slots) * 0.7:.1f}s" '
-        f'calcMode="discrete" repeatCount="indefinite"/></g>'
-    )
-    finish_card(svg)
-    return svg.render()
 
 
-def build_scores(scores: dict[int, int]) -> str:
-    this_year = dt.date.today().year
-    ranked = sorted(scores.items(), key=lambda kv: -kv[1])
-    H = 346
-    svg = Svg(W, H, "High scores: contributions per year, best " + ", ".join(f"{y} {v}" for y, v in ranked[:3]))
-    _, top = card(svg, "HIGH SCORES")
-
-    ox = 44
-    header_y = top + 30
-    svg.add(
-        svg.text("RANK", ox, header_y, 2, DIM),
-        svg.text("SCORE", ox + 84, header_y, 2, DIM),
-        svg.text("YEAR", ox + 218, header_y, 2, DIM),
-    )
-    suffix = {1: "ST", 2: "ND", 3: "RD"}
-    for i, (year, value) in enumerate(ranked):
-        y = header_y + 26 + i * 30
-        color = RAINBOW[i % len(RAINBOW)]
-        row = (
-            svg.text(f"{i + 1}{suffix.get(i + 1, 'TH')}", ox, y, 3, color)
-            + svg.text(f"{value:06d}", ox + 84, y, 3, color)
-            + svg.text(str(year), ox + 218, y, 3, color)
+def experience(data: dict, t: dict) -> str:
+    x, (y, h) = col_x(2), ROWS[1]
+    entries = data["experience"]
+    first, step = y + 76, 58
+    dot_x = x + 29
+    parts = [
+        card(x, y, COL, h, t),
+        label(x, y, "Experience", t),
+        f'<line x1="{dot_x:g}" y1="{first}" x2="{dot_x:g}" y2="{first + step * (len(entries) - 1)}" stroke="{t["border"]}" stroke-width="2"/>',
+    ]
+    for i, entry in enumerate(entries):
+        ey = first + i * step
+        if entry.get("current"):
+            parts.append(pulse(dot_x, ey, t["live"]))
+        else:
+            parts.append(f'<circle cx="{dot_x:g}" cy="{ey}" r="4" fill="{t["card"]}" stroke="{t["muted"]}" stroke-width="2"/>')
+        parts.append(
+            text(x + 46, ey + 5, entry["company"], 15, t["fg"], 600)
+            + text(x + 46, ey + 25, f"{entry['role']} · {entry['period']}", 12, t["muted"])
         )
-        if year == this_year:
-            row += svg.text("◀ NOW", ox + 306, y + 4, 2, PINK, inner=blink(0.8))
-        svg.add(f"<g>{row}{hidden_until(0.3 + i * 0.18)}</g>")
-    total_y = header_y + 26 + len(ranked) * 30 + 8
-    svg.add(
-        "".join(f'<rect x="{x}" y="{total_y - 10}" width="8" height="2" fill="{LINE}"/>' for x in range(ox, ox + 300, 14)),
-        svg.text("TOTAL", ox, total_y + 4, 2, DIM),
-        svg.text(f"{sum(scores.values()):06d}", ox + 84, total_y, 3, WHITE),
+    return "".join(parts)
+
+
+def numbers(data: dict, scores: dict[int, int], t: dict) -> str:
+    x, (y, h) = col_x(3), ROWS[1]
+    years = dt.date.today().year - data["career_start"]
+    return (
+        card(x, y, COL, h, t)
+        + label(x, y, "By the numbers", t)
+        + text(x + 21, y + 104, f"{sum(scores.values()):,}", 38, "url(#accent-text)", 800)
+        + text(x + 22, y + 128, f"contributions since {min(scores)}", 12, t["muted"])
+        + f'<line x1="{x + 22:g}" y1="{y + 152.5}" x2="{x + COL - 22:g}" y2="{y + 152.5}" stroke="{t["border"]}"/>'
+        + text(x + 22, y + 192, str(data["repos"]), 26, t["fg"], 700)
+        + text(x + 22, y + 212, "repositories", 12, t["muted"])
+        + text(x + 112, y + 192, f"{years}+", 26, t["fg"], 700)
+        + text(x + 112, y + 212, "years building", 12, t["muted"])
     )
 
-    # Equalizer-style history chart.
-    cx0, base_y, bar_w, gap, blocks = 470, top + 266, 36, 14, 20
-    svg.add(svg.text("SCORE HISTORY", cx0, header_y, 2, DIM))
+
+def activity(scores: dict[int, int], t: dict) -> str:
+    x, (y, h) = col_x(0), ROWS[2]
+    w = span(2)
+    today = dt.date.today()
+    years = sorted(scores)
     best = max(scores.values())
-    for i, (year, value) in enumerate(sorted(scores.items())):
-        x = cx0 + 8 + i * (bar_w + gap)
-        lit = max(1, round(value / best * blocks))
-        stack = []
-        for b in range(blocks):
-            ratio = b / blocks
-            color = (GREEN if ratio < 0.55 else YELLOW if ratio < 0.8 else RED) if b < lit else LINE
-            stack.append(f'<rect x="{x}" y="{base_y - (b + 1) * 10}" width="{bar_w}" height="8" fill="{color}"/>')
-        dark, glow = "".join(stack[lit:]), "".join(stack[:lit])
-        svg.add(
-            dark,
-            svg.reveal(glow, x, base_y - lit * 10, bar_w, lit * 10, 0.4 + i * 0.12, lit, 0.035, vertical=True),
-            svg.text(f"'{year % 100:02d}", x + bar_w / 2, base_y + 8, 2, YELLOW if year == this_year else WHITE, "middle"),
+    bar_w, top, bottom = 34, y + 74, y + 152
+    gap = (w - 44 - bar_w * len(years)) / max(1, len(years) - 1)
+    splines = 'calcMode="spline" keySplines="0 0 1 1;0.2 0.8 0.2 1"'
+    parts = [
+        card(x, y, w, h, t),
+        label(x, y, "Contributions / year", t),
+        text(x + w - 22, y + 34, f"UPDATED {today:%b} {today.day}".upper(), 11, t["muted"], 500, "end", mono=True),
+    ]
+    for i, year in enumerate(years):
+        bx = x + 22 + i * (bar_w + gap)
+        bh = max(3, round(scores[year] / best * (bottom - top)))
+        current = year == today.year
+        delay, grow = 0.15 + i * 0.07, 0.7
+        dur = delay + grow
+        key = f"0;{delay / dur:.3f};1"
+        parts.append(
+            f'<rect x="{bx:.1f}" y="{bottom - bh}" width="{bar_w}" height="{bh}" rx="7" fill="url(#accent-bar)" fill-opacity="{1 if current else 0.45}">'
+            f'<animate attributeName="height" values="0;0;{bh}" keyTimes="{key}" {splines} dur="{dur:.2f}s" fill="freeze"/>'
+            f'<animate attributeName="y" values="{bottom};{bottom};{bottom - bh}" keyTimes="{key}" {splines} dur="{dur:.2f}s" fill="freeze"/></rect>'
+            + text(
+                bx + bar_w / 2,
+                bottom - bh - 7,
+                f"{scores[year]:,}",
+                11,
+                t["fg"] if current else t["muted"],
+                600 if current else 400,
+                "middle",
+            )
+            + text(bx + bar_w / 2, bottom + 22, str(year), 11, t["fg"] if current else t["muted"], 500, "middle", mono=True)
         )
-    finish_card(svg)
-    return svg.render()
+    return "".join(parts)
 
 
-def build_footer(data: dict) -> str:
-    H = 168
-    svg = Svg(W, H, "Thanks for visiting! Continue? Insert coin.")
-    card(svg, None, top=2)
-    countdown = []
-    for d in range(9, -1, -1):
-        i = 9 - d
-        values = [1 if j == i else 0 for j in range(10)]
-        times = [j / 10 for j in range(10)]
-        countdown.append(
-            f'<g opacity="{1 if d == 9 else 0}">{svg.text(str(d), W / 2 + 96, 72, 3, PINK)}'
-            f"{discrete('opacity', values, times, 10, repeat=True)}</g>"
+def languages(data: dict, t: dict) -> str:
+    x, (y, h) = col_x(2), ROWS[2]
+    langs = sorted(((k, v) for k, v in data["languages"].items() if k not in NON_SKILL_LANGUAGES), key=lambda kv: -kv[1])[:6]
+    total = sum(v for _, v in langs)
+    cx, cy, r = x + 62, y + 116, 36
+    circumference = 2 * math.pi * r
+    parts = [card(x, y, COL, h, t), label(x, y, "Languages", t)]
+    offset = 0.0
+    for lang, count in langs:
+        length = circumference * count / total
+        parts.append(
+            f'<circle cx="{cx:g}" cy="{cy}" r="{r}" fill="none" stroke="{LANG_COLORS.get(lang, t["muted"])}" stroke-width="14" '
+            f'stroke-dasharray="{max(0.5, length - 3):.2f} {circumference:.2f}" stroke-dashoffset="{-offset:.2f}" '
+            f'transform="rotate(-90 {cx:g} {cy})"/>'
         )
-    svg.add(
-        svg.text("THANKS FOR VISITING!", W / 2, 26, 4, YELLOW, "middle"),
-        svg.text("CONTINUE?", W / 2 - 18, 72, 3, WHITE, "middle"),
-        "".join(countdown),
-        svg.text("INSERT COIN", W / 2, 112, 2, CYAN, "middle", inner=blink(1.2)),
-        svg.text(f"MADE WITH ♥ IN {data['base'].split(',')[0]}", W / 2, 140, 2, DIM, "middle"),
+        offset += length
+    parts.append(
+        text(cx, cy + 4, str(len(langs)), 20, t["fg"], 800, "middle") + text(cx, cy + 18, "LANGS", 9, t["muted"], 500, "middle", mono=True)
     )
-    finish_card(svg, top=2)
-    return svg.render()
+    for i, (lang, _count) in enumerate(langs):
+        ly = y + 68 + i * 21
+        parts.append(
+            f'<circle cx="{x + 124:g}" cy="{ly - 4}" r="4" fill="{LANG_COLORS.get(lang, t["muted"])}"/>'
+            + text(x + 134, ly, lang, 12, t["fg"], 500)
+        )
+    return "".join(parts)
 
 
-# ---------------------------------------------------------------- data
+def now(data: dict, t: dict) -> str:
+    x, (y, h) = col_x(3), ROWS[2]
+    lines = "".join(text(x + 22, y + 74 + i * 22, line, 15, t["fg"], 500) for i, line in enumerate(data["now"]) if line)
+    return card(x, y, COL, h, t) + label(x, y, "Now", t) + pulse(x + COL - 30, y + 30, t["live"]) + lines
+
+
+def build_bento(data: dict, scores: dict[int, int], theme: str) -> str:
+    t = THEMES[theme]
+    a, b = t["accent"]
+    defs = (
+        f"<style>{font_css()}</style>"
+        f'<linearGradient id="accent-text" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="{a}"/><stop offset="1" stop-color="{b}"/></linearGradient>'
+        f'<linearGradient id="accent-bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{a}"/><stop offset="1" stop-color="{b}"/></linearGradient>'
+        '<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>'
+        '<feColorMatrix type="saturate" values="0"/></filter>'
+        f'<pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="7" cy="7" r="1.2" fill="{t["muted"]}" fill-opacity="0.45"/></pattern>'
+        '<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>'
+        '<mask id="fade-down" maskContentUnits="objectBoundingBox"><rect width="1" height="1" fill="url(#fade)"/></mask>'
+    )
+    body = (
+        hero(data, t)
+        + location(data, t)
+        + stack(data, theme, t)
+        + experience(data, t)
+        + numbers(data, scores, t)
+        + activity(scores, t)
+        + languages(data, t)
+        + now(data, t)
+    )
+    title = (
+        f"{data['name']}: {data['headline']}, based in {data['location']['city']}. "
+        f"{sum(scores.values()):,} contributions since {min(scores)}, {data['repos']} repositories."
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" '
+        f'aria-label="{escape(title)}"><title>{escape(title)}</title><defs>{defs}</defs>{body}</svg>\n'
+    )
 
 
 def gh_graphql(query: str, *flags: str) -> str:
@@ -736,19 +411,11 @@ def main() -> None:
         DATA.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
     scores = {int(y): v for y, v in data["contributions"].items()}
-    icons = json.loads(ICONS.read_text())
     DIST.mkdir(exist_ok=True)
-    outputs = {
-        "hero.svg": build_hero(data, scores),
-        "player.svg": build_player(data, scores),
-        "stages.svg": build_stages(data),
-        "inventory.svg": build_inventory(data, icons),
-        "highscores.svg": build_scores(scores),
-        "footer.svg": build_footer(data),
-    }
-    for name, content in outputs.items():
-        (DIST / name).write_text(content)
-        print(f"dist/{name}  {len(content) / 1024:.1f} KB")
+    for theme in THEMES:
+        content = build_bento(data, scores, theme)
+        (DIST / f"bento-{theme}.svg").write_text(content)
+        print(f"dist/bento-{theme}.svg  {len(content) / 1024:.1f} KB")
 
 
 if __name__ == "__main__":

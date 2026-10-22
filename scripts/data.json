@@ -1,22 +1,20 @@
 {
   "login": "behemoth-thainv",
-  "handle": "THAINV",
-  "class": "FULL-STACK ENGINEER",
-  "rank": "TEAM LEAD",
-  "guild": "BEHEMOTH",
-  "guild_since": 2020,
-  "base": "HANOI, VIETNAM",
+  "name": "Nguyễn Viết Thái",
+  "headline": "Full-stack engineer & team lead at Behemoth",
+  "building": ["web & mobile products", "LINE commerce", "IoT systems", "AI-powered apps"],
+  "location": {"city": "Hanoi", "country": "Vietnam", "tz": "UTC+7"},
   "career_start": 2018,
-  "stages": [
-    {"period": "2018-2019", "name": "VTGO", "role": "DEVELOPER"},
-    {"period": "2019", "name": "VINATEK", "role": "DEVELOPER"},
-    {"period": "2020-NOW", "name": "BEHEMOTH", "role": "LEAD & DEV"}
+  "experience": [
+    {"company": "Behemoth", "role": "Team Lead", "period": "2020–now", "current": true},
+    {"company": "Vinatek", "role": "Developer", "period": "2019"},
+    {"company": "VTGO", "role": "Developer", "period": "2018–2019"}
   ],
-  "quests": ["LINE COMMERCE", "IOT", "E-COMMERCE", "GAMES", "AI"],
-  "inventory": [
-    {"label": "FRONTEND", "items": [["react", "REACT"], ["vue", "VUE"], ["next", "NEXT"], ["nuxt", "NUXT"], ["ts", "TS"], ["angular", "ANGULAR"], ["flutter", "FLUTTER"]]},
-    {"label": "BACKEND", "items": [["go", "GO"], ["ruby", "RAILS"], ["node", "NODE"], ["python", "PYTHON"], ["spring", "SPRING"]]},
-    {"label": "CLOUD+DB", "items": [["postgres", "PSQL"], ["redis", "REDIS"], ["gcp", "GCP"], ["aws", "AWS"], ["docker", "DOCKER"], ["k8s", "K8S"], ["linux", "LINUX"]]}
+  "now": ["Leading product teams", "at Behemoth.", "", "Exploring LLM apps", "and AI agents."],
+  "stack": [
+    [["react-original", "React"], ["vuejs-original", "Vue"], ["nextjs-original", "Next.js"], ["nuxtjs-original", "Nuxt"], ["typescript-original", "TypeScript"], ["angular-original", "Angular"], ["flutter-original", "Flutter"]],
+    [["go-original", "Go"], ["rails-plain", "Rails"], ["nodejs-original", "Node.js"], ["python-original", "Python"], ["spring-original", "Spring"]],
+    [["postgresql-original", "PostgreSQL"], ["mysql-original", "MySQL"], ["redis-original", "Redis"], ["googlecloud-original", "GCP"], ["amazonwebservices-original-wordmark", "AWS"], ["docker-original", "Docker"], ["kubernetes-original", "Kubernetes"]]
   ],
   "repos": 96,
   "languages": {
@@ -25,7 +23,14 @@
     "Vue": 19,
     "Go": 19,
     "Ruby": 14,
-    "JavaScript": 9
+    "HTML": 11,
+    "JavaScript": 9,
+    "SCSS": 5,
+    "Dockerfile": 4,
+    "Shell": 4,
+    "CSS": 4,
+    "Dart": 2,
+    "Astro": 2
   },
   "contributions": {
     "2020": 1682,
@@ -34,6 +39,6 @@
     "2023": 3945,
     "2024": 1813,
     "2025": 1779,
-    "2026": 3171
+    "2026": 3172
   }
 }
